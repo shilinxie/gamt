@@ -1,11 +1,19 @@
 Package: gamt
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Generalized Addtive Model Thresholds
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Author: Scott Large <scott.large@noaa.gov>
+Maintainer: Scott Large <scott.large@noaa.gov>
+Description: Calculates trends and thresholds of generalized additive models (GAM)
+    smoothers using finite differences.
+    Large, Fay, Friedland, and Link (2013) <doi:https://doi.org/10.1093/icesjms/fst067>
+License: GPL (≥ 2)
 Encoding: UTF-8
+BugReports: https://github.com/slarge/gamt/issues
 LazyData: true
+Depends: R (>= 3.1.0)
+Imports: mgcv (>= 1.8.24)
+Suggests: 
+    ggplot2 (>= 2.2.1),
+    testthat (>= 2.0.0)
+RoxygenNote: 6.0.1
