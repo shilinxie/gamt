@@ -1,0 +1,36 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "README-"
+)
+```
+
+# gamt
+
+The goal of gamt is to ...
+
+## Installation
+
+You can install gamt from github with:
+
+```{r gh-installation, eval = FALSE}
+# install.packages("devtools")
+devtools::install_github("slarge/gamt")
+```
+
+## Example
+
+Step 1. Fit GAM to answer whether temporal autocorrelation is important. Use the residuals from the gam and a log likelihood ratio test to calculate the "P.ac" value. A significant p.ac value suggests a model with autocorrelated error structure explains more of the variation in the residuals of the gam model than a model without autocorrelated error structure. Thus, using a GAMM is necessary to account for autocorrelation in the time series (i.e., use GAMM if p.ac < 0.05). If p.ac > 0.05, then GAM will be used to look for non-linearities, so this code will also fit the model and provide selection criteria (i.e. edf, GCV and AIC scores from GAM and Linear model (linear) to compare)
+
+
+
+```{r example}
+## basic example code
+```
