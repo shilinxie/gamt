@@ -75,79 +75,152 @@ Orange <- data.frame(Orange)
 Orange$time <- seq(1:nrow(Orange))
 ts_len <- Orange$time
 rand <- rep(1, nrow(Orange))
+data = Orange
+response_name = "age"
+term_name = "circumference"
 
-best_model <- function(data){
+best_model <- function(response_name, term_name, data, ...){
 
   ## Check data
+  if(!"data.frame" %in% class(data)){
+    stop("data must be supplied as a data.frame")
+  }
+  if(!all(c(response_name,
+           term_name) %in% colnames(data))) {
+    stop("Check that respone_name and term_name are both columns in dataframe")
+  }
+  if(!exists("bs")) {
+    bs <- "tp"
+  }
+  if(!exists("k")) {
+    k <- 4
+  }
+  if(!exists("optimMmethod")) {
+    optimMmethod = "GCV.Cp"
+  }
 
-  all_summary <- data.frame("MODEL" = c("gam_model", "lm_model", "gamm_model", "lmac_model"),
-                            stringsAsFactors = FALSE)
-  gam_summary <- data.frame() %>%
-    mutate(model = "gam",
-           aicc = AICc(gam_model),
-           loglik = logLik(gam_model),
-           dev_expl = summary(gam_model)$dev.expl,
-           edf = summary(gam_model)$edf,
-           p_val = summary(gam_model)$s.pv,
-           rsq = summary(gam_model)$r.sq,
-           gcv = summary(gam_model)$sp.criterion,
-           d_gcv = delta.GCV.gam.lm,
-           d_aic = delta.AIC.gam.lm,
-           d_dev_expl = dev.diff.gam.lm)
+  rand <- rep(1, nrow(data))
 
+  ## Define models
+  gam_formula <- as.formula(sprintf("%s ~ s(%s, bs = '%s', k = %s)",
+                                    response_name,
+                                    term_name,
+                                    bs,
+                                    k))
+
+  lm_formula <- as.formula(sprintf("%s ~ %s",
+                                   response_name,
+                                   term_name))
 
   ## Run models
-  gam_model  <- mgcv::gam(age ~ s(circumference,
-                                  bs = "tp",
-                                  k = 4),
-                          data = Orange,
-                          optimMmethod = "GCV.Cp",
+  gam_model  <- mgcv::gam(gam_formula,
+                          data = data,
+                          optimMmethod = optimMmethod,
                           se = T)
-  c("AICc", "logLik","dev.expl", "edf", "Pvalue","R-squared","GCV","delta.GCV","p.ac","delta.AIC","diff.dev.expl")
 
-  lm_model  <- mgcv::gam(age ~ circumference,
-                         data = Orange,
-                         optimMmethod = "GCV.Cp",
+  lm_model  <- mgcv::gam(lm_formula,
+                         data = data,
+                         optimMmethod = optimMmethod,
                          se = T)
 
-  gamm_model <- mgcv::gamm(age ~ s(circumference,
-                                   bs = "tp",
-                                   k = 4),
-                           data = Orange,
-                           optimMmethod = "GCV.Cp",
+  gamm_model <- mgcv::gamm(gam_formula,
+                           data = data,
+                           optimMmethod = optimMmethod,
                            se = T,
-                           correlation = nlme::corAR1(form = ~ts_len))
+                           correlation = nlme::corAR1(form = ~ 1))
 
-  lmac_model <-mgcv:: gamm(age ~ circumference,
-                           random = list(rand = ~1),
-                           data = Orange,
-                           se = T,
-                           correlation = nlme::corAR1(form = ~ts_len))
+  lmac_model <-mgcv::gamm(lm_formula,
+                          random = list(rand = ~ 1),
+                          data = data,
+                          se = T,
+                          correlation = nlme::corAR1(form = ~ 1))
 
   ## Collect output
+  gam_summary <- data.frame(#model = "gam_model",
+                            # aicc = AICc(gam_model),
+                            # loglik = logLik(gam_model),
+                            # dev_expl = summary(gam_model)$dev.expl,
+                            edf = summary(gam_model)$edf,
+                            # p_val = summary(gam_model)$s.pv,
+                            # rsq = summary(gam_model)$r.sq,
+                            # gcv = summary(gam_model)$sp.criterion,
+                            d_gcv = summary(gam_model)$sp.criterion - summary(lm_model)$sp.criterion ,
+                            d_aic = AICc(gam_model) - AICc(lm_model) ,
+                            # d_dev_expl = summary(gam_model)$dev.expl-summary(lm_model)$dev.expl,
+                            stringsAsFactors = FALSE)
 
+  gamm_summary <- data.frame(#model = "gamm_model",
+                            # aicc = summary(gamm_model$lme)$AIC,
+                            # loglik = summary(gamm_model$lme)$logLik,
+                            # dev_expl = deviance_explained(gamm_model),
+                            edf = summary(gamm_model$gam)$edf,
+                            # p_val = summary(gamm_model$gam)$s.pv,
+                            # rsq = summary(gamm_model$gam)$r.sq,
+                            # gcv = NA,
+                            # d_gcv = NA,
+                            d_aic =  summary(gamm_model$lme)$AIC-summary(lmac_model$lme)$AIC,
+                            # d_dev_expl = deviance_explained(gamm_model)-deviance_explained(lmac_model),
+                            stringsAsFactors = FALSE)
 
+  best_model <- NULL
+  if(ac_prob(gam_model) <= 0.05) {  # probability of autocorrelation <= 0.05
+    if(gamm_summary$edf >= 2.0 &    # EDF gamm > 2.0
+       gamm_summary$d_aic >= 2.0) { # dAIC > 2.0
+      best_model <- get("gamm_model")
+    }
+    if(gamm_summary$d_aic < 2.0) {
+      best_model <- get("lmac_model")
+    }
+  }
+  if(ac_prob(gam_model) > 0.05){    # probability of autocorrelation > 0.05
+    if(gam_summary$edf >= 2.0 &     # EDF gam > 2.0
+       gam_summary$d_gcv < 0 &      # dGCV negative
+       gam_summary$d_aic >= 2.0) {  # dAIC > 2.0
+      best_model <- get("gam_model")
+    }
+    if(gam_summary$d_aic < 2.0) {
+      best_model <- get("lm_model")
+    }
+  }
 
-
-  ## Select best model
-
+  if(is.null(best_model)){
+    stop("Something went wrong and the best model couldn't be identified.")
+  }
+  if(!is.null(best_model)){
+    return(best_model)
+  }
 }
 
 
+# lm_summary <- data.frame(model = "lm_model",
+#                           aicc = AICc(lm_model),
+#                           loglik = logLik(lm_model),
+#                           dev_expl = summary(lm_model)$dev.expl,
+#                           edf = summary(lm_model)$residual.df,
+#                           p_val = summary(lm_model)$p.pv[[2]],
+#                           rsq = summary(lm_model)$r.sq,
+#                           gcv = summary(lm_model)$sp.criterion,
+#                           d_gcv = NA,
+#                           d_aic = NA,
+#                           d_dev_expl = NA,
+#                           stringsAsFactors = FALSE)
+
+# lmac_summary <- data.frame(model = "lmac_model",
+#                            aicc = summary(lmac_model$lme)$AIC,
+#                            loglik = summary(lmac_model$lme)$logLik,
+#                            dev_expl = deviance_explained(lmac_model),
+#                            edf = summary(lmac_model$gam)$residual.df,
+#                            p_val = summary(lmac_model$gam)$p.pv[[2]],
+#                            rsq = summary(lmac_model$gam)$r.sq,
+#                            gcv = NA,
+#                            d_gcv = NA,
+#                            d_aic = NA,
+#                            d_dev_expl = NA,
+#                            stringsAsFactors = FALSE)
+
+
+
 gamt <- function(formula, bootstraps, ...){
-
-  gam_model <- mgcv::gam(formula, ...)
-
-
-  gam1  <- gam(myresponse ~ s(mydriver, bs= "tp",k = ks), optimMmethod="GCV.Cp",se = T)
-  linear <- gam(myresponse ~ mydriver, method = "GCV.Cp", se = T)
-  dev.resid <- residuals(gam1,type='deviance')
-  lme1 <- lme(dev.resid~1,random=~1|rand,correlation=corAR1(form=~year),method='ML')
-  lm1 <- lm(dev.resid~1)
-  p.ac <- 1-pchisq(2*(logLik(lme1)[1]-logLik(lm1)[1]),2)
-  delta.GCV.gam.lm <- summary(gam1)$sp.criterion - summary(linear)$sp.criterion   #A negative value means the GAM with a smoother is a better model than the linear model
-  delta.AIC.gam.lm <- AICc(gam1) - AICc(linear)                                   #A negative value means the GAM with a smoother is a better model than the linear model
-  dev.diff.gam.lm <- summary(gam1)$dev.expl-summary(linear)$dev.expl
 
 
 }
