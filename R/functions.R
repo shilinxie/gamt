@@ -25,6 +25,7 @@ AICc <- function(mod) {
 #' @examples
 deviance_explained <- function(mod) {
 
+  rand <- rep(1, length(mod$y))
   null_model  <- MASS::glmmPQL(age ~ 1,
                                random = list(rand = ~1),
                                data = Orange,
@@ -52,7 +53,6 @@ ac_prob <- function(mod){
     stop("mod should be a gamObject")
   }
 
-  ts_len <- seq_len(length(mod$y))
   rand <- rep(1, length(mod$y))
 
   deviance_resid <- residuals(mod,
@@ -60,7 +60,7 @@ ac_prob <- function(mod){
 
   lmac_resid <- nlme::lme(deviance_resid ~ 1,
                           random = ~1|rand,
-                          correlation = nlme::corAR1(form = ~ts_len),
+                          correlation = nlme::corAR1(form = ~1),
                           method = 'ML')
 
   lm_resid <- lm(deviance_resid ~ 1)
@@ -92,7 +92,10 @@ best_model <- function(x, y, ...){
   if(length(y) != length(x)){
     stop("x and y must be of equal length")
   }
-
+  ## make a data.frame() to hold the vectors and the random factor (rand)
+  dat <- data.frame(x = x,
+                    y = y,
+                    rand = rep(1, length(x)))
   ## add default model arguments if not otherwise supplied
   if(!exists("bs")) {
     bs <- "tp"
@@ -106,40 +109,35 @@ best_model <- function(x, y, ...){
     method = "GCV.Cp"
   }
 
-  try_model <- function(model_type) {
+  try_model <- function(model_type, ...) {
     out <- tryCatch(
       {
-        ## Define random component for ac models
-        rand <- rep(1, length(x))
-
-        ## Define model formula
-        gam_formula <- as.formula(sprintf("%s ~ s(%s, bs = '%s', k = %s)",
-                                          "y",
-                                          "x",
-                                          bs,
-                                          k))
-
-        lm_formula <- as.formula(sprintf("%s ~ %s",
-                                         "y",
-                                         "x"))
         ## run the models
         switch(model_type,
-               gam = {mgcv::gam(gam_formula,
-                                method = method,
-                                se = T)
+               gam = {
+                 mgcv::gam(y ~ s(x, bs = bs, k = k),
+                           method = method,
+                           data = dat,
+                           se = T)
                },
-               lm = {mgcv::gam(lm_formula,
-                               method = method,
-                               se = T)
+               lm = {
+                 mgcv::gam(y ~ x,
+                           method = method,
+                           data = dat,
+                           se = T)
                },
-               gamm = {mgcv::gamm(gam_formula,
-                                  se = T,
-                                  correlation = nlme::corAR1(form = ~ 1))
+               gamm = {
+                 mgcv::gamm(y ~ s(x, bs = bs, k = k),
+                            data = dat,
+                            se = T,
+                            correlation = nlme::corAR1(form = ~ 1))
                },
-               lmac = {mgcv::gamm(lm_formula,
-                                  random = list(rand = ~ 1),
-                                  se = T,
-                                  correlation = nlme::corAR1(form = ~ 1))
+               lmac = {
+                 mgcv::gamm(y ~ x,
+                            random = list(rand = ~ 1),
+                            data = dat,
+                            se = T,
+                            correlation = nlme::corAR1(form = ~ 1))
                },
                stop("Enter a valid model_type!")
         )
@@ -210,7 +208,60 @@ best_model <- function(x, y, ...){
 }
 
 
-gamt <- function(formula, bootstraps, ...){
+#' Title
+#'
+#' @param bootstraps
+#' @param ...
+#' @param x
+#' @param y
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' x <- seq(0, 50, 1)
+#' y <- ((runif(1, 10, 20) * x) / (runif(1, 0, 10) + x)) + rnorm(51, 0, 1)
+#'
+#'
+
+
+gamt <- function(x,y, bootstraps, ...){
+
+  x <- seq(0, 50, 1)
+  y <- ((runif(1, 10, 20) * x) / (runif(1, 0, 10) + x)) + rnorm(51, 0, 1)
+  best_mod <- best_model(x,y)
+
+  best_mod <- best_model(x,y)
+  gam1 <- gam(myresponse ~ s(mydriver, bs = "tp", k = ks), method = "GCV.Cp", se = T)
+
+  ind.fit <- list(mydriver = seq(from = min(mydriver), to = max(mydriver), length.out = sp.len))
+  pred <- predict.gam(gam1, newdata = ind.fit, type = "response", se.fit = T)
+
+  gam.data <- data.frame(pred$fit,
+                         ind.fit$mydriver)
+
+
+
+
+
+
+
+
+
+
 
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
