@@ -70,96 +70,110 @@ ac_prob <- function(mod){
 }
 
 
-data(Orange)
-Orange <- data.frame(Orange)
-Orange$time <- seq(1:nrow(Orange))
-ts_len <- Orange$time
-rand <- rep(1, nrow(Orange))
-data = Orange
-response_name = "age"
-term_name = "circumference"
+#' Best model
+#'
+#' @param x numeric vector of predictor variable
+#' @param y numeric vector of response variable
+#' @param ... other arguments to pass to the mgcv::gam()
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' x <- seq(0, 50, 1)
+#' y <- ((runif(1, 10, 20) * x) / (runif(1, 0, 10) + x)) + rnorm(51, 0, 1)
+#' ## fit the nonlinear model using maximum likelihood ("ML")
+#' bb <- best_model(x = x, y = y, method = "ML")
+#' summary(bb)
 
-best_model <- function(response_name, term_name, data, ...){
+best_model <- function(x, y, ...){
 
   ## Check data
-  if(!"data.frame" %in% class(data)){
-    stop("data must be supplied as a data.frame")
+  if(length(y) != length(x)){
+    stop("x and y must be of equal length")
   }
-  if(!all(c(response_name,
-           term_name) %in% colnames(data))) {
-    stop("Check that respone_name and term_name are both columns in dataframe")
-  }
+
+  ## add default model arguments if not otherwise supplied
   if(!exists("bs")) {
     bs <- "tp"
   }
+
   if(!exists("k")) {
     k <- 4
   }
-  if(!exists("optimMmethod")) {
-    optimMmethod = "GCV.Cp"
+
+  if(!exists("method")) {
+    method = "GCV.Cp"
   }
 
-  rand <- rep(1, nrow(data))
+  try_model <- function(model_type) {
+    out <- tryCatch(
+      {
+        ## Define random component for ac models
+        rand <- rep(1, length(x))
 
-  ## Define models
-  gam_formula <- as.formula(sprintf("%s ~ s(%s, bs = '%s', k = %s)",
-                                    response_name,
-                                    term_name,
-                                    bs,
-                                    k))
+        ## Define model formula
+        gam_formula <- as.formula(sprintf("%s ~ s(%s, bs = '%s', k = %s)",
+                                          "y",
+                                          "x",
+                                          bs,
+                                          k))
 
-  lm_formula <- as.formula(sprintf("%s ~ %s",
-                                   response_name,
-                                   term_name))
+        lm_formula <- as.formula(sprintf("%s ~ %s",
+                                         "y",
+                                         "x"))
+        ## run the models
+        switch(model_type,
+               gam = {mgcv::gam(gam_formula,
+                                method = method,
+                                se = T)
+               },
+               lm = {mgcv::gam(lm_formula,
+                               method = method,
+                               se = T)
+               },
+               gamm = {mgcv::gamm(gam_formula,
+                                  se = T,
+                                  correlation = nlme::corAR1(form = ~ 1))
+               },
+               lmac = {mgcv::gamm(lm_formula,
+                                  random = list(rand = ~ 1),
+                                  se = T,
+                                  correlation = nlme::corAR1(form = ~ 1))
+               },
+               stop("Enter a valid model_type!")
+        )
+      },
+      error = function(cond) {
+        message(sprintf("The %s caused an error!\n%s\n",
+                        model_type,
+                        cond))
+        return(NA)
+      },
+      warning = function(cond) {
+        message(sprintf("The %s caused a warning!\n%s\n",
+                        model_type,
+                        cond))
+        return(NA)
+      }
+    )
+    return(out)
+  }
 
   ## Run models
-  gam_model  <- mgcv::gam(gam_formula,
-                          data = data,
-                          optimMmethod = optimMmethod,
-                          se = T)
-
-  lm_model  <- mgcv::gam(lm_formula,
-                         data = data,
-                         optimMmethod = optimMmethod,
-                         se = T)
-
-  gamm_model <- mgcv::gamm(gam_formula,
-                           data = data,
-                           optimMmethod = optimMmethod,
-                           se = T,
-                           correlation = nlme::corAR1(form = ~ 1))
-
-  lmac_model <-mgcv::gamm(lm_formula,
-                          random = list(rand = ~ 1),
-                          data = data,
-                          se = T,
-                          correlation = nlme::corAR1(form = ~ 1))
+  gam_model   <- try_model(model_type = "gam")
+  lm_model    <- try_model(model_type = "lm")
+  gamm_model  <- try_model(model_type = "gamm")
+  lmac_model  <- try_model(model_type = "lmac")
 
   ## Collect output
-  gam_summary <- data.frame(#model = "gam_model",
-                            # aicc = AICc(gam_model),
-                            # loglik = logLik(gam_model),
-                            # dev_expl = summary(gam_model)$dev.expl,
-                            edf = summary(gam_model)$edf,
-                            # p_val = summary(gam_model)$s.pv,
-                            # rsq = summary(gam_model)$r.sq,
-                            # gcv = summary(gam_model)$sp.criterion,
-                            d_gcv = summary(gam_model)$sp.criterion - summary(lm_model)$sp.criterion ,
-                            d_aic = AICc(gam_model) - AICc(lm_model) ,
-                            # d_dev_expl = summary(gam_model)$dev.expl-summary(lm_model)$dev.expl,
+  gam_summary <- data.frame(edf = summary(gam_model)$edf,
+                            d_gcv = summary(gam_model)$sp.criterion - summary(lm_model)$sp.criterion,
+                            d_aic = abs(AICc(gam_model) - AICc(lm_model)),
                             stringsAsFactors = FALSE)
 
-  gamm_summary <- data.frame(#model = "gamm_model",
-                            # aicc = summary(gamm_model$lme)$AIC,
-                            # loglik = summary(gamm_model$lme)$logLik,
-                            # dev_expl = deviance_explained(gamm_model),
-                            edf = summary(gamm_model$gam)$edf,
-                            # p_val = summary(gamm_model$gam)$s.pv,
-                            # rsq = summary(gamm_model$gam)$r.sq,
-                            # gcv = NA,
-                            # d_gcv = NA,
-                            d_aic =  summary(gamm_model$lme)$AIC-summary(lmac_model$lme)$AIC,
-                            # d_dev_expl = deviance_explained(gamm_model)-deviance_explained(lmac_model),
+  gamm_summary <- data.frame(edf = summary(gamm_model$gam)$edf,
+                            d_aic =  abs(summary(gamm_model$lme)$AIC-summary(lmac_model$lme)$AIC),
                             stringsAsFactors = FALSE)
 
   best_model <- NULL
@@ -167,9 +181,11 @@ best_model <- function(response_name, term_name, data, ...){
     if(gamm_summary$edf >= 2.0 &    # EDF gamm > 2.0
        gamm_summary$d_aic >= 2.0) { # dAIC > 2.0
       best_model <- get("gamm_model")
+      best_model$best_model <- "gamm"
     }
     if(gamm_summary$d_aic < 2.0) {
       best_model <- get("lmac_model")
+      best_model$best_model <- "lmac"
     }
   }
   if(ac_prob(gam_model) > 0.05){    # probability of autocorrelation > 0.05
@@ -177,9 +193,11 @@ best_model <- function(response_name, term_name, data, ...){
        gam_summary$d_gcv < 0 &      # dGCV negative
        gam_summary$d_aic >= 2.0) {  # dAIC > 2.0
       best_model <- get("gam_model")
+      best_model$best_model <- "gam"
     }
     if(gam_summary$d_aic < 2.0) {
       best_model <- get("lm_model")
+      best_model$best_model <- "lm"
     }
   }
 
@@ -190,34 +208,6 @@ best_model <- function(response_name, term_name, data, ...){
     return(best_model)
   }
 }
-
-
-# lm_summary <- data.frame(model = "lm_model",
-#                           aicc = AICc(lm_model),
-#                           loglik = logLik(lm_model),
-#                           dev_expl = summary(lm_model)$dev.expl,
-#                           edf = summary(lm_model)$residual.df,
-#                           p_val = summary(lm_model)$p.pv[[2]],
-#                           rsq = summary(lm_model)$r.sq,
-#                           gcv = summary(lm_model)$sp.criterion,
-#                           d_gcv = NA,
-#                           d_aic = NA,
-#                           d_dev_expl = NA,
-#                           stringsAsFactors = FALSE)
-
-# lmac_summary <- data.frame(model = "lmac_model",
-#                            aicc = summary(lmac_model$lme)$AIC,
-#                            loglik = summary(lmac_model$lme)$logLik,
-#                            dev_expl = deviance_explained(lmac_model),
-#                            edf = summary(lmac_model$gam)$residual.df,
-#                            p_val = summary(lmac_model$gam)$p.pv[[2]],
-#                            rsq = summary(lmac_model$gam)$r.sq,
-#                            gcv = NA,
-#                            d_gcv = NA,
-#                            d_aic = NA,
-#                            d_dev_expl = NA,
-#                            stringsAsFactors = FALSE)
-
 
 
 gamt <- function(formula, bootstraps, ...){
